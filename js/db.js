@@ -1,7 +1,6 @@
-// ── DB.JS — IndexedDB wrapper ──────────────────────
-const DB_NAME = 'FieldCompanionDB';
+// ── DB.JS ──────────────────────────────────────────
+const DB_NAME = 'FieldMOPCO';
 const DB_VER  = 1;
-const STORE   = 'entries';
 
 let _db = null;
 
@@ -11,12 +10,15 @@ function openDB() {
     const req = indexedDB.open(DB_NAME, DB_VER);
     req.onupgradeneeded = e => {
       const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: 'id' });
-        store.createIndex('tag',      'tag',      { unique: false });
-        store.createIndex('type',     'type',     { unique: false });
-        store.createIndex('priority', 'priority', { unique: false });
-        store.createIndex('ts',       'ts',       { unique: false });
+      // Motors store
+      if (!db.objectStoreNames.contains('motors')) {
+        const ms = db.createObjectStore('motors', { keyPath: 'tag' });
+        ms.createIndex('area', 'area', { unique: false });
+      }
+      // Rounds store
+      if (!db.objectStoreNames.contains('rounds')) {
+        const rs = db.createObjectStore('rounds', { keyPath: 'id' });
+        rs.createIndex('date', 'date', { unique: false });
       }
     };
     req.onsuccess = e => { _db = e.target.result; resolve(_db); };
@@ -25,41 +27,94 @@ function openDB() {
 }
 
 const DB = {
-  async save(entry) {
+  // ── MOTORS ──────────────────────────────────────
+  async saveMotor(motor) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(entry);
-      tx.oncomplete = () => resolve(entry);
+      const tx = db.transaction('motors', 'readwrite');
+      tx.objectStore('motors').put(motor);
+      tx.oncomplete = () => resolve(motor);
       tx.onerror    = e => reject(e.target.error);
     });
   },
 
-  async getAll() {
+  async saveMotors(motors) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readonly');
-      const req = tx.objectStore(STORE).index('ts').getAll();
-      req.onsuccess = e => resolve(e.target.result.reverse());
-      req.onerror   = e => reject(e.target.error);
+      const tx = db.transaction('motors', 'readwrite');
+      const store = tx.objectStore('motors');
+      motors.forEach(m => store.put(m));
+      tx.oncomplete = () => resolve(motors.length);
+      tx.onerror    = e => reject(e.target.error);
     });
   },
 
-  async get(id) {
+  async getAllMotors() {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readonly');
-      const req = tx.objectStore(STORE).get(id);
+      const tx = db.transaction('motors', 'readonly');
+      const req = tx.objectStore('motors').getAll();
       req.onsuccess = e => resolve(e.target.result);
       req.onerror   = e => reject(e.target.error);
     });
   },
 
-  async delete(id) {
+  async getMotor(tag) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).delete(id);
+      const tx = db.transaction('motors', 'readonly');
+      const req = tx.objectStore('motors').get(tag);
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = e => reject(e.target.error);
+    });
+  },
+
+  async getMotorCount() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('motors', 'readonly');
+      const req = tx.objectStore('motors').count();
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = e => reject(e.target.error);
+    });
+  },
+
+  // ── ROUNDS ──────────────────────────────────────
+  async saveRound(round) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('rounds', 'readwrite');
+      tx.objectStore('rounds').put(round);
+      tx.oncomplete = () => resolve(round);
+      tx.onerror    = e => reject(e.target.error);
+    });
+  },
+
+  async getAllRounds() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('rounds', 'readonly');
+      const req = tx.objectStore('rounds').index('date').getAll();
+      req.onsuccess = e => resolve(e.target.result.reverse());
+      req.onerror   = e => reject(e.target.error);
+    });
+  },
+
+  async getRound(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('rounds', 'readonly');
+      const req = tx.objectStore('rounds').get(id);
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = e => reject(e.target.error);
+    });
+  },
+
+  async deleteRound(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('rounds', 'readwrite');
+      tx.objectStore('rounds').delete(id);
       tx.oncomplete = () => resolve();
       tx.onerror    = e => reject(e.target.error);
     });

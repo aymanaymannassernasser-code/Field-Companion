@@ -1,222 +1,269 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#f8f7f4" />
-  <meta name="description" content="Field Companion – Motor & Equipment Log for MOPCO" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="Field" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="manifest" href="manifest.json" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="icon" href="icons/icon-192.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
-  <title>Field Companion</title>
-  <link rel="stylesheet" href="css/style.css" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="theme-color" content="#f8f7f4"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+  <meta name="apple-mobile-web-app-title" content="Field"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="icons/icon-192.png"/>
+  <link rel="icon" href="icons/icon-192.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet"/>
+  <title>Field — MOPCO Plant 1</title>
+  <link rel="stylesheet" href="css/style.css"/>
 </head>
 <body>
-
-<!-- APP SHELL -->
 <div id="app">
 
   <!-- HEADER -->
   <header id="top-bar">
     <div id="header-left">
       <span id="app-title">Field</span>
+      <span id="app-plant">Plant 1</span>
     </div>
     <div id="header-right">
       <span id="live-time"></span>
     </div>
   </header>
 
-  <!-- MAIN CONTENT AREA -->
   <main id="content">
 
-    <!-- ── VIEW: HOME ─────────────────────────── -->
-    <section class="view active" id="view-home">
+    <!-- ══ VIEW: DASHBOARD ═══════════════════════════ -->
+    <section class="view active" id="view-dash">
+      <div class="dash-header">
+        <div>
+          <h1 class="view-title">Overview</h1>
+          <p class="view-subtitle" id="dash-subtitle"></p>
+        </div>
+        <button class="btn-primary" id="btn-new-round">+ New Round</button>
+      </div>
+
+      <!-- Alert strip -->
+      <div id="alert-strip"></div>
+
+      <!-- Quick stats -->
+      <div class="stat-row" id="dash-stats"></div>
+
+      <!-- Grease due -->
+      <div class="section-block" id="grease-due-block">
+        <div class="section-label">Greasing Due</div>
+        <div id="grease-due-list"></div>
+      </div>
+
+      <!-- Recent rounds -->
+      <div class="section-block" id="recent-rounds-block">
+        <div class="section-label">Recent Rounds</div>
+        <div id="recent-rounds-list"></div>
+      </div>
+    </section>
+
+    <!-- ══ VIEW: MOTORS DATABASE ══════════════════════ -->
+    <section class="view" id="view-motors">
       <div class="view-header">
-        <h1 class="view-title">Equipment Log</h1>
-        <button class="btn-primary" id="btn-new-entry">+ New Entry</button>
+        <h1 class="view-title">Motors</h1>
+        <button class="btn-secondary" id="btn-import-db">Import</button>
       </div>
 
-      <!-- FILTER BAR -->
-      <div class="filter-bar">
-        <button class="filter-chip active" data-filter="all">All</button>
-        <button class="filter-chip" data-filter="inspection">Inspection</button>
-        <button class="filter-chip" data-filter="maintenance">Maintenance</button>
-        <button class="filter-chip" data-filter="fault">Fault</button>
-        <button class="filter-chip" data-filter="reading">Reading</button>
-      </div>
-
-      <!-- SEARCH -->
       <div class="search-wrap">
-        <input type="search" id="search-input" placeholder="Search by tag, motor, or note…" />
+        <input type="search" id="motor-search" placeholder="Tag, description, area…"/>
       </div>
 
-      <!-- LOG LIST -->
-      <div id="log-list">
-        <div class="empty-state" id="empty-state">
-          <div class="empty-icon">⚙</div>
-          <p>No entries yet.<br/>Tap <strong>+ New Entry</strong> to begin.</p>
-        </div>
+      <div class="filter-bar">
+        <button class="filter-chip active" data-mfilter="all">All <span class="chip-count" id="chip-all"></span></button>
+        <button class="filter-chip" data-mfilter="grease-due">Grease Due <span class="chip-count urgent" id="chip-grease"></span></button>
+        <button class="filter-chip" data-mfilter="Common">Common</button>
+        <button class="filter-chip" data-mfilter="Ammonia & Utility">Ammonia</button>
       </div>
+
+      <div id="motor-list"></div>
     </section>
 
-    <!-- ── VIEW: FORM ─────────────────────────── -->
-    <section class="view" id="view-form">
+    <!-- ══ VIEW: MOTOR DETAIL ══════════════════════════ -->
+    <section class="view" id="view-motor-detail">
       <div class="view-header">
-        <button class="btn-back" id="btn-back">← Back</button>
-        <h1 class="view-title" id="form-title">New Entry</h1>
+        <button class="btn-back" id="btn-motor-back">← Back</button>
+        <button class="btn-secondary" id="btn-motor-edit">Edit</button>
+      </div>
+      <div id="motor-detail-content"></div>
+    </section>
+
+    <!-- ══ VIEW: MONTHLY ROUND ════════════════════════ -->
+    <section class="view" id="view-round">
+      <div class="view-header">
+        <button class="btn-back" id="btn-round-back">← Back</button>
+        <h1 class="view-title" id="round-title">Monthly Round</h1>
       </div>
 
-      <div class="form-body">
+      <!-- Round steps -->
+      <div id="round-body">
 
-        <div class="field-group">
-          <label>Entry Type</label>
-          <div class="type-selector" id="type-selector">
-            <button class="type-btn active" data-type="inspection">Inspection</button>
-            <button class="type-btn" data-type="maintenance">Maintenance</button>
-            <button class="type-btn" data-type="fault">Fault</button>
-            <button class="type-btn" data-type="reading">Reading</button>
+        <!-- Step 1: Date & notes -->
+        <div class="round-step" id="step-meta">
+          <div class="step-header">
+            <span class="step-num">1</span>
+            <span class="step-label">Round Info</span>
           </div>
-        </div>
-
-        <div class="field-group">
-          <label for="f-tag">Motor Tag / ID</label>
-          <input type="text" id="f-tag" placeholder="e.g. M-101, P-23A" autocomplete="off" list="tag-suggestions" />
-          <datalist id="tag-suggestions"></datalist>
-        </div>
-
-        <div class="field-group">
-          <label for="f-location">Location / Area</label>
-          <input type="text" id="f-location" placeholder="e.g. Unit 2, Cooling Tower" autocomplete="off" />
-        </div>
-
-        <div class="field-group" id="readings-group">
-          <label>Readings <span class="label-hint">(optional)</span></label>
-          <div class="readings-grid">
-            <div class="reading-field">
-              <span class="reading-label">Current (A)</span>
-              <input type="number" id="r-current" placeholder="—" step="0.1" />
+          <div class="form-body">
+            <div class="field-group">
+              <label>Round Date</label>
+              <input type="date" id="round-date"/>
             </div>
-            <div class="reading-field">
-              <span class="reading-label">Temp (°C)</span>
-              <input type="number" id="r-temp" placeholder="—" step="0.1" />
+            <div class="field-group">
+              <label>Technician(s)</label>
+              <input type="text" id="round-tech" placeholder="Names or initials"/>
             </div>
-            <div class="reading-field">
-              <span class="reading-label">Vibration</span>
-              <input type="number" id="r-vibration" placeholder="—" step="0.01" />
-            </div>
-            <div class="reading-field">
-              <span class="reading-label">Hours Run</span>
-              <input type="number" id="r-hours" placeholder="—" step="1" />
+            <div class="field-group">
+              <label>Notes</label>
+              <textarea id="round-notes" rows="2" placeholder="General observations…"></textarea>
             </div>
           </div>
         </div>
 
-        <div class="field-group">
-          <label for="f-note">Notes</label>
-          <textarea id="f-note" rows="4" placeholder="Describe findings, actions taken, or observations…"></textarea>
-        </div>
-
-        <div class="field-group">
-          <label for="f-priority">Priority</label>
-          <div class="priority-selector" id="priority-selector">
-            <button class="priority-btn active" data-priority="normal">Normal</button>
-            <button class="priority-btn" data-priority="watch">Watch</button>
-            <button class="priority-btn" data-priority="urgent">Urgent</button>
+        <!-- Step 2: Motor readings list -->
+        <div class="round-step" id="step-readings">
+          <div class="step-header">
+            <span class="step-num">2</span>
+            <span class="step-label">Motor Readings</span>
+            <span class="step-hint" id="readings-progress"></span>
           </div>
-        </div>
 
-        <div class="field-group">
-          <label>
-            <input type="checkbox" id="f-geo" />
-            <span>Attach GPS location</span>
-          </label>
-          <div id="geo-status" class="geo-status"></div>
-        </div>
-
-        <div class="field-group">
-          <label>Photo <span class="label-hint">(optional)</span></label>
-          <div class="photo-area" id="photo-area">
-            <input type="file" id="f-photo" accept="image/*" capture="environment" />
-            <label for="f-photo" class="photo-label">
-              <span class="photo-icon">📷</span>
-              <span>Take or choose photo</span>
-            </label>
-            <img id="photo-preview" class="photo-preview hidden" alt="Preview" />
-            <button class="btn-remove-photo hidden" id="btn-remove-photo">Remove</button>
+          <div class="reading-controls">
+            <input type="search" id="reading-search" placeholder="Filter by tag or area…"/>
+            <button class="btn-secondary" id="btn-expand-all">Expand All</button>
           </div>
+
+          <div id="readings-list"></div>
         </div>
 
-        <div class="form-actions">
-          <button class="btn-save" id="btn-save">Save Entry</button>
-          <button class="btn-cancel" id="btn-cancel-form">Cancel</button>
+        <!-- Step 3: Greasing list -->
+        <div class="round-step" id="step-grease">
+          <div class="step-header">
+            <span class="step-num">3</span>
+            <span class="step-label">Greasing List</span>
+            <span class="step-hint" id="grease-count-label"></span>
+          </div>
+          <p class="step-desc">Motors flagged by Action 1 (hours) or Action 2 (12-month interval). Mark each done after greasing.</p>
+          <div id="grease-list"></div>
+        </div>
+
+        <!-- Save -->
+        <div class="round-actions">
+          <button class="btn-save" id="btn-save-round">Save Round</button>
+          <button class="btn-cancel" id="btn-cancel-round">Cancel</button>
         </div>
 
       </div>
     </section>
 
-    <!-- ── VIEW: DETAIL ───────────────────────── -->
-    <section class="view" id="view-detail">
+    <!-- ══ VIEW: ROUND DETAIL ══════════════════════════ -->
+    <section class="view" id="view-round-detail">
       <div class="view-header">
-        <button class="btn-back" id="btn-detail-back">← Back</button>
+        <button class="btn-back" id="btn-rdetail-back">← Back</button>
         <div class="detail-actions">
-          <button class="btn-icon" id="btn-share-entry" title="Share">↑</button>
-          <button class="btn-icon btn-danger" id="btn-delete-entry" title="Delete">✕</button>
+          <button class="btn-icon" id="btn-share-round">↑</button>
+          <button class="btn-icon btn-danger" id="btn-delete-round">✕</button>
         </div>
       </div>
-      <div id="detail-content"></div>
+      <div id="round-detail-content"></div>
     </section>
 
-    <!-- ── VIEW: STATS ────────────────────────── -->
-    <section class="view" id="view-stats">
+    <!-- ══ VIEW: IMPORT ════════════════════════════════ -->
+    <section class="view" id="view-import">
       <div class="view-header">
-        <h1 class="view-title">Overview</h1>
-        <button class="btn-secondary" id="btn-export">Export CSV</button>
+        <button class="btn-back" id="btn-import-back">← Back</button>
+        <h1 class="view-title">Import Database</h1>
       </div>
-      <div id="stats-content"></div>
+      <div class="form-body">
+        <p class="import-desc">Update the motor database without losing your round history. Three ways:</p>
+
+        <div class="import-method">
+          <div class="import-method-title">① Upload Excel / CSV</div>
+          <p class="import-method-desc">Save your asset file as CSV (File → Save As → CSV UTF-8) then upload here.</p>
+          <input type="file" id="import-file" accept=".csv,.xlsx,.xls"/>
+          <label for="import-file" class="photo-label">
+            <span>📂 Choose file</span>
+          </label>
+          <div id="import-file-status"></div>
+        </div>
+
+        <div class="import-method">
+          <div class="import-method-title">② Paste Table</div>
+          <p class="import-method-desc">Copy the table from Excel (Ctrl+A → Ctrl+C) and paste below. Tab-separated rows work best.</p>
+          <textarea id="import-paste" rows="6" placeholder="Paste Excel data here…"></textarea>
+          <button class="btn-secondary" id="btn-parse-paste">Parse Pasted Data</button>
+        </div>
+
+        <div class="import-method">
+          <div class="import-method-title">③ AI Photo Read <span class="badge-beta">Beta</span></div>
+          <p class="import-method-desc">Take a photo of the nameplate or a spreadsheet screenshot. Claude will read the fields.</p>
+          <input type="file" id="import-photo" accept="image/*" capture="environment"/>
+          <label for="import-photo" class="photo-label">
+            <span>📷 Photograph nameplate / sheet</span>
+          </label>
+          <div id="import-photo-preview-wrap"></div>
+          <button class="btn-secondary hidden" id="btn-read-photo">Read with AI</button>
+          <div id="import-ai-result"></div>
+        </div>
+
+        <div id="import-preview" class="hidden">
+          <div class="section-label">Preview (<span id="import-count"></span> motors)</div>
+          <div id="import-preview-list"></div>
+          <div class="form-actions">
+            <button class="btn-save" id="btn-confirm-import">Confirm Import</button>
+            <button class="btn-cancel" id="btn-cancel-import">Cancel</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ══ VIEW: MOTOR EDIT ════════════════════════════ -->
+    <section class="view" id="view-motor-edit">
+      <div class="view-header">
+        <button class="btn-back" id="btn-edit-back">← Back</button>
+        <h1 class="view-title" id="edit-title">Edit Motor</h1>
+      </div>
+      <div class="form-body" id="motor-edit-form"></div>
     </section>
 
   </main>
 
   <!-- BOTTOM NAV -->
   <nav id="bottom-nav">
-    <button class="nav-btn active" data-view="home">
-      <span class="nav-icon">≡</span>
-      <span class="nav-label">Log</span>
-    </button>
-    <button class="nav-btn" data-view="stats">
+    <button class="nav-btn active" data-view="dash">
       <span class="nav-icon">◎</span>
-      <span class="nav-label">Stats</span>
+      <span class="nav-label">Dashboard</span>
+    </button>
+    <button class="nav-btn" data-view="motors">
+      <span class="nav-icon">⚙</span>
+      <span class="nav-label">Motors</span>
     </button>
   </nav>
 
 </div>
 
-<!-- TOAST -->
 <div id="toast"></div>
-
-<!-- CONFIRM MODAL -->
 <div id="modal-overlay" class="hidden">
   <div id="modal-box">
     <p id="modal-message"></p>
     <div class="modal-actions">
-      <button id="modal-confirm" class="btn-danger-solid">Delete</button>
+      <button id="modal-confirm" class="btn-danger-solid">Confirm</button>
       <button id="modal-cancel" class="btn-secondary">Cancel</button>
     </div>
   </div>
 </div>
 
 <script src="js/db.js"></script>
+<script src="js/motors_data.json" type="application/json" id="motors-seed"></script>
 <script src="js/app.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
   }
 </script>
 </body>
