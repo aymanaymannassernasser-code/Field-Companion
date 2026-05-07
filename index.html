@@ -200,7 +200,15 @@
 
         <div class="import-method">
           <div class="import-method-title">③ AI Photo Read <span class="badge-beta">Beta</span></div>
-          <p class="import-method-desc">Take a photo of the nameplate or a spreadsheet screenshot. Claude will read the fields.</p>
+          <p class="import-method-desc">Take a photo of the nameplate or a spreadsheet screenshot. Claude will read the fields. Your key is stored only on this device.</p>
+          <div class="field-group" style="gap:6px">
+            <label style="font-size:0.72rem;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:0.06em">Anthropic API Key</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="password" id="api-key-input" placeholder="sk-ant-…" style="flex:1;font-size:0.82rem"/>
+              <button class="btn-secondary" id="btn-save-key" style="white-space:nowrap;flex-shrink:0">Save</button>
+            </div>
+            <div id="api-key-status" style="font-size:0.75rem;color:var(--text-3);min-height:16px"></div>
+          </div>
           <input type="file" id="import-photo" accept="image/*" capture="environment"/>
           <label for="import-photo" class="photo-label">
             <span>📷 Photograph nameplate / sheet</span>

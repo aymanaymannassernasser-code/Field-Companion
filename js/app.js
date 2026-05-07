@@ -856,7 +856,7 @@ $('btn-delete-round').addEventListener('click', () => {
 });
 
 // ── IMPORT ────────────────────────────────────────────
-$('btn-import-db').addEventListener('click', () => showView('import'));
+// import button handled inside initApiKeyUI section above
 
 // CSV / xlsx file
 $('import-file').addEventListener('change', async function() {
@@ -967,6 +967,55 @@ $('btn-cancel-import').addEventListener('click', () => {
   _importPreviewMotors = [];
 });
 
+// ── API KEY MANAGEMENT ────────────────────────────────
+const API_KEY_STORE = 'field_anthropic_key';
+
+function loadApiKey() {
+  return localStorage.getItem(API_KEY_STORE) || '';
+}
+function saveApiKey(key) {
+  if (key) localStorage.setItem(API_KEY_STORE, key);
+  else localStorage.removeItem(API_KEY_STORE);
+}
+
+// Populate key field on view open and wire save button
+function initApiKeyUI() {
+  const existing = loadApiKey();
+  const input = $('api-key-input');
+  const status = $('api-key-status');
+  if (existing) {
+    input.value = existing;
+    status.textContent = '✓ Key saved on this device';
+    status.style.color = 'var(--accent)';
+  }
+}
+
+$('btn-save-key').addEventListener('click', () => {
+  const key = $('api-key-input').value.trim();
+  const status = $('api-key-status');
+  if (!key) {
+    saveApiKey('');
+    status.textContent = 'Key cleared.';
+    status.style.color = 'var(--text-3)';
+    return;
+  }
+  if (!key.startsWith('sk-ant-')) {
+    status.textContent = 'Key should start with sk-ant-…';
+    status.style.color = 'var(--urgent)';
+    return;
+  }
+  saveApiKey(key);
+  status.textContent = '✓ Saved on this device.';
+  status.style.color = 'var(--accent)';
+});
+
+// Also init when import view is opened
+const origImportClick = $('btn-import-db').onclick;
+$('btn-import-db').addEventListener('click', () => {
+  showView('import');
+  initApiKeyUI();
+});
+
 // ── AI PHOTO READ (nameplate) ─────────────────────────
 let _importPhotoData = null;
 $('import-photo').addEventListener('change', function() {
@@ -976,7 +1025,7 @@ $('import-photo').addEventListener('change', function() {
   reader.onload = e => {
     _importPhotoData = e.target.result;
     const wrap = $('import-photo-preview-wrap');
-    wrap.innerHTML = `<img src="${e.target.result}" alt="Preview"/>`;
+    wrap.innerHTML = `<img src="${e.target.result}" style="width:100%;border-radius:var(--radius);margin-top:6px" alt="Preview"/>`;
     $('btn-read-photo').classList.remove('hidden');
   };
   reader.readAsDataURL(file);
@@ -984,45 +1033,74 @@ $('import-photo').addEventListener('change', function() {
 
 $('btn-read-photo').addEventListener('click', async () => {
   if (!_importPhotoData) return;
+
+  const apiKey = loadApiKey();
+  if (!apiKey) {
+    $('import-ai-result').innerHTML = `<span style="color:var(--urgent)">Please enter and save your Anthropic API key above first.</span>`;
+    $('api-key-input').focus();
+    return;
+  }
+
   const btn = $('btn-read-photo');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Reading…';
   $('import-ai-result').textContent = '';
 
   try {
-    const base64 = _importPhotoData.split(',')[1];
+    const base64    = _importPhotoData.split(',')[1];
     const mediaType = _importPhotoData.split(';')[0].split(':')[1];
 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1000,
         messages: [{
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-            { type: 'text', text: `This is a motor nameplate or data sheet. Extract all available fields and return ONLY a JSON object with these keys (use null for missing): tag, description, manufacturer, motorType, serialNo, voltage, kw, amp, rpm, connection, frameSize, deBearing, ndeBearing. Return only the JSON object, no explanation.` }
+            { type: 'text', text: 'This is a motor nameplate or asset data sheet. Extract all visible fields and return ONLY a valid JSON object with these keys (null for any missing): tag, description, manufacturer, motorType, serialNo, voltage, kw, amp, rpm, connection, frameSize, deBearing, ndeBearing. No explanation, no markdown, just the JSON object.' }
           ]
         }]
       })
     });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `API error ${resp.status}`);
+    }
+
     const data = await resp.json();
-    const text = data.content?.map(c => c.text||'').join('') || '';
+    const text = (data.content || []).map(c => c.text || '').join('');
     let parsed;
-    try { parsed = JSON.parse(text.replace(/```json|```/g,'')); } catch(e) { throw new Error('Could not parse AI response.'); }
+    try {
+      parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+    } catch(e) {
+      throw new Error('Could not parse AI response — try a clearer photo.');
+    }
 
-    $('import-ai-result').innerHTML = `<strong>Detected fields:</strong><br/>` +
-      Object.entries(parsed).filter(([,v])=>v).map(([k,v])=>`<span style="color:var(--accent)">${k}:</span> ${v}`).join(' · ');
+    const fields = Object.entries(parsed).filter(([,v]) => v !== null && v !== '');
+    $('import-ai-result').innerHTML = fields.length
+      ? `<strong style="color:var(--accent)">Detected ${fields.length} fields:</strong><br/><br/>` +
+        fields.map(([k,v]) => `<span style="color:var(--text-3)">${k}:</span> <strong>${v}</strong>`).join('<br/>')
+      : 'No fields detected — try a closer or clearer photo.';
 
-    // Show preview for single motor
     if (parsed.tag || parsed.serialNo) {
-      const m = { tag: parsed.tag || parsed.serialNo || 'NEW-' + Date.now().toString(36), ...parsed };
+      const m = {
+        tag: parsed.tag || ('NEW-' + Date.now().toString(36)),
+        ...parsed,
+      };
       showImportPreview([m]);
     }
+
   } catch(e) {
-    $('import-ai-result').textContent = `Error: ${e.message}`;
+    $('import-ai-result').innerHTML = `<span style="color:var(--urgent)">Error: ${e.message}</span>`;
   } finally {
     btn.disabled = false;
     btn.textContent = 'Read with AI';
