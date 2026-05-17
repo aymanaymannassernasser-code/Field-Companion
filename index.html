@@ -182,13 +182,17 @@
         <p class="import-desc">Update the motor database without losing your round history. Three ways:</p>
 
         <div class="import-method">
-          <div class="import-method-title">① Upload Excel / CSV</div>
-          <p class="import-method-desc">Save your asset file as CSV (File → Save As → CSV UTF-8) then upload here.</p>
+          <div class="import-method-title">① Upload Excel or CSV</div>
+          <p class="import-method-desc">Upload your asset file directly — .xlsx works as-is. CSV also accepted. Multi-sheet files will ask which sheet to use.</p>
           <input type="file" id="import-file" accept=".csv,.xlsx,.xls"/>
           <label for="import-file" class="photo-label">
-            <span>📂 Choose file</span>
+            <span>📂 Choose .xlsx or .csv file</span>
           </label>
           <div id="import-file-status"></div>
+          <div id="sheet-picker" class="hidden" style="margin-top:8px">
+            <div style="font-size:0.78rem;color:var(--text-2);margin-bottom:6px;font-weight:500">Multiple sheets found — pick one:</div>
+            <div id="sheet-picker-buttons" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+          </div>
         </div>
 
         <div class="import-method">
