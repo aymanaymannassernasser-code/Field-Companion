@@ -858,112 +858,421 @@ $('btn-delete-round').addEventListener('click', () => {
 // ── IMPORT ────────────────────────────────────────────
 // import button handled inside initApiKeyUI section above
 
-// CSV / xlsx file
+// ── COLUMN MAP: exact MOPCO header → app field ────────
+// Keys are lowercase trimmed substrings to match against header text.
+// Order matters — first match wins for each app field.
+const COL_MAP = [
+  // app field            header fragments to match (lowercase, partial ok)
+  ['tag',                 ['tag no']],
+  ['area',                ['process area']],
+  ['description',         ['description']],
+  ['manufacturer',        ['manufacturer']],
+  ['motorType',           ['motor type']],
+  ['serialNo',            ['motor s.n', 'serial']],
+  ['voltage',             ['voltage']],
+  ['kw',                  ['kw']],
+  ['amp',                 ['\namp\n', 'amp']],   // careful — avoid "clamp" etc
+  ['rpm',                 ['rpm']],
+  ['connection',          ['motor connection', 'connection']],
+  ['requiresGreasing',    ['required greasing']],
+  ['deBearing',           ['de bearing type']],
+  ['ndeBearing',          ['nde bearing type']],
+  ['frameSize',           ['frame size']],
+  ['drawer',              ['drawer']],
+  ['bearingReplInterval', ['bearing replacement interval']],
+  ['greaseType',          ['grease type']],
+  ['greaseInterval',      ['greasing interval']],
+  ['greaseQtyDE',         ['grease qty de']],
+  ['greaseQtyNDE',        ['grease qty nde']],
+  ['hrMeterReading',      ['hr. meter reading', 'hr meter reading']],
+  ['counterRepeats',      ['counter repeats (by hand)', 'counter repeats']],
+  ['accumReading',        ["accum. reading\n", 'accum. reading', 'accum reading']],
+  ['hrsAtLastGrease',     ['operating hours at last greasing']],
+  ['counterRepeatsLastGrease', ['counter repeats at last greasing']],
+  ['accumAtLastGrease',   ['accum. reading at last greasing']],
+  ['dateLastGrease',      ['date at last greasing']],
+  ['totalGreasings',      ['total no. of greasings']],
+  ['dateLastGreaseReplacement', ['date at last grease replacement']],
+  ['accumAtLastBearingRepl',    ['accumelated hr readings at last bearing']],
+  ['dateLastBearingReplacement',['date at last bearing replacement']],
+  ['numBearingReplacements',    ['no of bearing replacements']],
+  ['lastMaintenanceDate', ['1y maintenance date']],
+  ['opStatus',            ['operation status']],
+  ['comments',            ['comments']],
+  ['deBearingStd',        ['de standardized']],
+  ['deBearingSealed',     ['de sealed']],
+  ['deBearingGreaseInterval', ['de grease interval']],
+  ['ndeBearingStd',       ['nde standardized']],
+  ['ndeBearingSealed',    ['nde sealed']],
+  ['ndeBearingGreaseInterval', ['nde grease interval']],
+];
+
+// Build column index map from a headers array
+function buildColIndex(headers) {
+  // headers: array of strings (already lowercased + trimmed)
+  const idx = {};
+  for (const [field, fragments] of COL_MAP) {
+    for (const frag of fragments) {
+      const i = headers.findIndex(h => h.includes(frag.toLowerCase().trim()));
+      if (i >= 0) { idx[field] = i; break; }
+    }
+  }
+  return idx;
+}
+
+// Convert a raw row + colIndex → motor object
+function rowToMotor(row, colIdx) {
+  const getRaw = field => {
+    const i = colIdx[field];
+    if (i === undefined || i < 0) return null;
+    const v = row[i];
+    if (v === null || v === undefined) return null;
+    const s = String(v).trim().replace(/\r/g, '');
+    return s === '' ? null : s;
+  };
+  const getNum = field => {
+    const v = getRaw(field);
+    if (v === null) return null;
+    const n = parseFloat(v.replace(/,/g, ''));
+    return isNaN(n) ? null : n;
+  };
+  const getDate = field => {
+    const v = getRaw(field);
+    if (!v) return null;
+    // Try ISO first
+    if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+    // Excel serial number (days since 1900-01-01)
+    const n = parseFloat(v);
+    if (!isNaN(n) && n > 40000 && n < 60000) {
+      const d = new Date(Math.round((n - 25569) * 86400 * 1000));
+      return d.toISOString().slice(0, 10);
+    }
+    // DD/MM/YYYY or D/M/YYYY
+    const dm = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (dm) {
+      const year = dm[3].length === 2 ? '20' + dm[3] : dm[3];
+      return `${year}-${dm[2].padStart(2,'0')}-${dm[1].padStart(2,'0')}`;
+    }
+    return v;
+  };
+
+  const tag = getRaw('tag');
+  if (!tag) return null;
+
+  const hr    = getNum('hrMeterReading');
+  const cr    = getNum('counterRepeats');
+  const accum = getNum('accumReading');
+  const accumGrease = getNum('accumAtLastGrease');
+  const hrsAtGrease = getNum('hrsAtLastGrease');
+  const crGrease    = getNum('counterRepeatsLastGrease');
+
+  // Compute accumulated if not present
+  let computedAccum = accum;
+  if (!computedAccum && hr !== null) {
+    const repeats = cr || 0;
+    // detect multiplier: if existing accum > 65535*2 use 65535, else 10000
+    const mult = accum && accum > 65535 * 2 ? 65535 : 10000;
+    computedAccum = mult * repeats + hr;
+  }
+
+  // Compute accumAtLastGrease
+  let computedAccumGrease = accumGrease;
+  if (!computedAccumGrease && hrsAtGrease !== null) {
+    const repeats = crGrease || 0;
+    const mult = computedAccum && computedAccum > 65535 * 2 ? 65535 : 10000;
+    computedAccumGrease = mult * repeats + hrsAtGrease;
+  }
+
+  const hrsSince = (computedAccum !== null && computedAccumGrease !== null)
+    ? computedAccum - computedAccumGrease
+    : null;
+
+  return {
+    tag,
+    area:              getRaw('area'),
+    description:       getRaw('description'),
+    manufacturer:      getRaw('manufacturer'),
+    motorType:         getRaw('motorType'),
+    serialNo:          getRaw('serialNo'),
+    voltage:           getRaw('voltage'),
+    kw:                getNum('kw'),
+    amp:               getNum('amp'),
+    rpm:               getNum('rpm'),
+    connection:        getRaw('connection'),
+    requiresGreasing:  getRaw('requiresGreasing'),
+    deBearing:         getRaw('deBearing'),
+    ndeBearing:        getRaw('ndeBearing'),
+    frameSize:         getRaw('frameSize'),
+    drawer:            getRaw('drawer'),
+    bearingReplInterval: getNum('bearingReplInterval'),
+    greaseType:        getRaw('greaseType'),
+    greaseInterval:    getNum('greaseInterval'),
+    greaseQtyDE:       getNum('greaseQtyDE'),
+    greaseQtyNDE:      getNum('greaseQtyNDE'),
+    hrMeterReading:    hr,
+    counterRepeats:    cr,
+    accumReading:      computedAccum,
+    hrsAtLastGrease:   hrsAtGrease,
+    counterRepeatsLastGrease: crGrease,
+    accumAtLastGrease: computedAccumGrease,
+    hrsSinceLastGrease: hrsSince,
+    dateLastGrease:    getDate('dateLastGrease'),
+    totalGreasings:    getNum('totalGreasings'),
+    dateLastGreaseReplacement: getDate('dateLastGreaseReplacement'),
+    accumAtLastBearingRepl: getNum('accumAtLastBearingRepl'),
+    dateLastBearingReplacement: getDate('dateLastBearingReplacement'),
+    numBearingReplacements: getNum('numBearingReplacements'),
+    lastMaintenanceDate: getDate('lastMaintenanceDate'),
+    opStatus:          getRaw('opStatus'),
+    comments:          getRaw('comments'),
+  };
+}
+
+// ── Find header row in a 2D array (handles blank leading rows) ──
+function findHeaderRow(rows) {
+  for (let i = 0; i < Math.min(5, rows.length); i++) {
+    const row = rows[i].map(v => String(v || '').toLowerCase().trim());
+    // Must contain 'tag' somewhere to be the header row
+    if (row.some(h => h.includes('tag no') || h === 'tag')) return i;
+  }
+  return -1;
+}
+
+// ── Parse CSV text (handles tab and comma, quoted fields) ────────
+function parseCSVText(text) {
+  // Split into lines respecting quoted newlines
+  const rows = [];
+  let current = [];
+  let inQuote = false;
+  let cell = '';
+  const delim = text.includes('\t') ? '\t' : ',';
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') {
+      if (inQuote && text[i+1] === '"') { cell += '"'; i++; }
+      else inQuote = !inQuote;
+    } else if (ch === delim && !inQuote) {
+      current.push(cell); cell = '';
+    } else if ((ch === '\n') && !inQuote) {
+      current.push(cell); cell = '';
+      rows.push(current); current = [];
+    } else if (ch === '\r') {
+      // skip
+    } else {
+      cell += ch;
+    }
+  }
+  if (cell || current.length) { current.push(cell); rows.push(current); }
+  return rows;
+}
+
+function parseFromRows(rows) {
+  const headerRowIdx = findHeaderRow(rows);
+  if (headerRowIdx < 0) return { motors: [], error: 'Could not find header row. Make sure the sheet has a "TAG No." column.' };
+
+  const headers = rows[headerRowIdx].map(h => String(h || '').toLowerCase().trim());
+  const colIdx  = buildColIndex(headers);
+
+  if (colIdx.tag === undefined) return { motors: [], error: 'TAG No. column not found in headers.' };
+
+  const motors = [];
+  for (let i = headerRowIdx + 1; i < rows.length; i++) {
+    const m = rowToMotor(rows[i], colIdx);
+    if (m) motors.push(m);
+  }
+  return { motors, error: null };
+}
+
+// ── CSV file / paste handler ─────────────────────────
+function parseFromCSVText(text) {
+  const rows = parseCSVText(text);
+  return parseFromRows(rows);
+}
+
+// ── FILE INPUT: handles .csv and .xlsx ───────────────
 $('import-file').addEventListener('change', async function() {
   const file = this.files[0];
   if (!file) return;
-  $('import-file-status').textContent = `Reading ${file.name}…`;
-  try {
-    const text = await file.text();
-    const motors = parseCSV(text);
-    if (motors.length) {
-      showImportPreview(motors);
-      $('import-file-status').textContent = `Found ${motors.length} motors.`;
-    } else {
-      $('import-file-status').textContent = 'Could not parse — try paste method or CSV format.';
+  const status = $('import-file-status');
+  status.textContent = `Reading ${file.name}…`;
+  status.style.color = 'var(--text-2)';
+
+  const isXLSX = file.name.match(/\.xlsx?$/i);
+
+  if (isXLSX) {
+    // Use SheetJS loaded from CDN
+    if (!window.XLSX) {
+      status.textContent = 'Loading Excel parser…';
+      await loadSheetJS();
     }
-  } catch(e) {
-    $('import-file-status').textContent = 'Error reading file.';
+    try {
+      const buf = await file.arrayBuffer();
+      const wb  = window.XLSX.read(buf, { type: 'array', cellDates: false });
+
+      // Find the right sheet — prefer '1', '2', first non-bearing sheet
+      let sheetName = wb.SheetNames.find(n => n === '1')
+        || wb.SheetNames.find(n => !n.toLowerCase().includes('bearing'))
+        || wb.SheetNames[0];
+
+      // Let user pick if multiple data sheets
+      const dataSheets = wb.SheetNames.filter(n => !n.toLowerCase().includes('bearing'));
+      if (dataSheets.length > 1) {
+        sheetName = await pickSheet(dataSheets);
+      }
+
+      const ws   = wb.Sheets[sheetName];
+      const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+      const { motors, error } = parseFromRows(rows);
+
+      if (error) {
+        status.textContent = error; status.style.color = 'var(--urgent)'; return;
+      }
+      if (!motors.length) {
+        status.textContent = 'No motors found. Check the file has data rows.';
+        status.style.color = 'var(--urgent)'; return;
+      }
+      status.textContent = `✓ Found ${motors.length} motors from sheet "${sheetName}"`;
+      status.style.color = 'var(--accent)';
+      showImportPreview(motors);
+    } catch(e) {
+      status.textContent = `Error: ${e.message}`;
+      status.style.color = 'var(--urgent)';
+    }
+  } else {
+    // CSV
+    try {
+      const text = await file.text();
+      const { motors, error } = parseFromCSVText(text);
+      if (error) {
+        status.textContent = error; status.style.color = 'var(--urgent)'; return;
+      }
+      if (!motors.length) {
+        status.textContent = 'No motors found in CSV.';
+        status.style.color = 'var(--urgent)'; return;
+      }
+      status.textContent = `✓ Found ${motors.length} motors`;
+      status.style.color = 'var(--accent)';
+      showImportPreview(motors);
+    } catch(e) {
+      status.textContent = `Error reading file: ${e.message}`;
+      status.style.color = 'var(--urgent)';
+    }
   }
 });
+
+// Load SheetJS from CDN lazily
+function loadSheetJS() {
+  return new Promise((resolve, reject) => {
+    if (window.XLSX) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Could not load Excel parser. Check internet connection.'));
+    document.head.appendChild(s);
+  });
+}
+
+// Sheet picker — shows buttons in the UI
+function pickSheet(sheetNames) {
+  return new Promise(resolve => {
+    const picker  = $('sheet-picker');
+    const buttons = $('sheet-picker-buttons');
+    picker.classList.remove('hidden');
+    buttons.innerHTML = sheetNames.map(n =>
+      `<button class="btn-secondary" style="font-size:0.8rem;padding:7px 14px"
+        data-sheet="${n}">${n}</button>`
+    ).join('');
+    buttons.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        picker.classList.add('hidden');
+        resolve(btn.dataset.sheet);
+      });
+    });
+  });
+}
 
 // Paste
 $('btn-parse-paste').addEventListener('click', () => {
   const text = $('import-paste').value.trim();
   if (!text) { showToast('Nothing pasted.'); return; }
-  const motors = parseCSV(text);
+  const { motors, error } = parseFromCSVText(text);
+  if (error) { showToast(error); return; }
   if (motors.length) showImportPreview(motors);
-  else showToast('Could not detect motor data. Make sure headers are included.');
+  else showToast('No motors detected. Make sure you copied from the header row down.');
 });
-
-function parseCSV(text) {
-  const lines = text.trim().split('\n').map(l => l.split(/\t|,/));
-  if (lines.length < 2) return [];
-  const headers = lines[0].map(h => h.trim().toLowerCase());
-
-  // Try to find key columns
-  const tagIdx = headers.findIndex(h => h.includes('tag'));
-  if (tagIdx < 0) return [];
-
-  const find = (...keys) => {
-    for (const k of keys) {
-      const i = headers.findIndex(h => h.includes(k));
-      if (i >= 0) return i;
-    }
-    return -1;
-  };
-
-  const cols = {
-    tag:           tagIdx,
-    area:          find('area', 'process'),
-    description:   find('desc'),
-    manufacturer:  find('manuf'),
-    kw:            find('kw'),
-    voltage:       find('volt'),
-    amp:           find('amp', 'current'),
-    rpm:           find('rpm'),
-    greaseInterval: find('grease interval', 'greasing interval'),
-    dateLastGrease: find('last greas'),
-    hrMeterReading: find('hr. meter', 'hr meter', 'hour meter'),
-    counterRepeats: find('counter repeat'),
-    accumReading:   find('accum. reading\n', 'accum read'),
-    deBearing:      find('de bearing'),
-    ndeBearing:     find('nde bearing'),
-  };
-
-  return lines.slice(1)
-    .map(row => {
-      const tag = row[cols.tag]?.trim();
-      if (!tag || tag === '') return null;
-      const m = { tag };
-      Object.entries(cols).forEach(([k, i]) => {
-        if (i >= 0 && k !== 'tag') m[k] = row[i]?.trim() || null;
-      });
-      return m;
-    })
-    .filter(Boolean);
-}
 
 let _importPreviewMotors = [];
 function showImportPreview(motors) {
   _importPreviewMotors = motors;
   $('import-count').textContent = motors.length;
-  $('import-preview-list').innerHTML = motors.slice(0, 20).map(m =>
-    `<div class="import-preview-row">
-      <div class="import-preview-tag">${m.tag}</div>
-      <div class="import-preview-meta">${[m.area, m.description, m.kw ? m.kw + ' kW' : ''].filter(Boolean).join(' · ')}</div>
-    </div>`
-  ).join('') + (motors.length > 20 ? `<div style="font-size:0.8rem;color:var(--text-3);padding:6px 0">…and ${motors.length-20} more</div>` : '');
+
+  // Summarise what fields were actually found
+  const sample = motors[0] || {};
+  const foundFields = Object.entries(sample)
+    .filter(([k, v]) => v !== null && v !== undefined && k !== 'tag')
+    .map(([k]) => k);
+
+  const withAccum   = motors.filter(m => m.accumReading).length;
+  const withGrease  = motors.filter(m => m.dateLastGrease).length;
+  const withKw      = motors.filter(m => m.kw).length;
+
+  $('import-preview-list').innerHTML =
+    `<div style="background:var(--accent-lt);border-radius:var(--radius);padding:10px 12px;margin-bottom:10px;font-size:0.8rem;color:var(--accent)">
+      <strong>${motors.length} motors</strong> · ${withKw} with kW · ${withAccum} with accumulated hours · ${withGrease} with grease date
+    </div>` +
+    motors.slice(0, 25).map(m => {
+      const parts = [
+        m.area,
+        m.description ? m.description.slice(0, 35) : null,
+        m.kw ? m.kw + ' kW' : null,
+        m.accumReading ? Number(m.accumReading).toLocaleString() + ' hrs' : null,
+        m.dateLastGrease ? 'greased ' + m.dateLastGrease : null,
+      ].filter(Boolean);
+      return `<div class="import-preview-row">
+        <div class="import-preview-tag">${m.tag}</div>
+        <div class="import-preview-meta">${parts.join(' · ')}</div>
+      </div>`;
+    }).join('')
+    + (motors.length > 25
+      ? `<div style="font-size:0.8rem;color:var(--text-3);padding:6px 0">…and ${motors.length - 25} more</div>`
+      : '');
+
   $('import-preview').classList.remove('hidden');
 }
 
 $('btn-confirm-import').addEventListener('click', async () => {
   if (!_importPreviewMotors.length) return;
+  const btn = $('btn-confirm-import');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
   await DB.saveMotors(_importPreviewMotors);
-  // merge into state
+
+  let added = 0, updated = 0;
   for (const m of _importPreviewMotors) {
     const idx = S.motors.findIndex(x => x.tag === m.tag);
-    if (idx >= 0) S.motors[idx] = { ...S.motors[idx], ...m };
-    else S.motors.push(m);
+    if (idx >= 0) { S.motors[idx] = { ...S.motors[idx], ...m }; updated++; }
+    else { S.motors.push(m); added++; }
   }
+
   $('import-preview').classList.add('hidden');
-  showToast(`${_importPreviewMotors.length} motors imported.`);
+  $('sheet-picker').classList.add('hidden');
+  $('import-file-status').textContent = '';
+  _importPreviewMotors = [];
+  btn.disabled = false;
+  btn.textContent = 'Confirm Import';
+
+  showToast(`Done — ${added} added, ${updated} updated.`);
   renderMotorList();
+  renderDash();
   showView('motors');
 });
 
 $('btn-cancel-import').addEventListener('click', () => {
   $('import-preview').classList.add('hidden');
+  $('sheet-picker').classList.add('hidden');
+  $('import-file-status').textContent = '';
   _importPreviewMotors = [];
 });
 
